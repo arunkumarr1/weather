@@ -75,8 +75,6 @@ powershell -ExecutionPolicy Bypass -File deploy.ps1
 powershell -ExecutionPolicy Bypass -File deploy.ps1
 ```
 
-Requires `gh` signed in as `arunkumarr1` (not the work account). Publishes to
-<https://arunkumarr1.github.io/weather/>.
 
 ## Data sources
 
