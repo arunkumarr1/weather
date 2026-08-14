@@ -33,6 +33,7 @@ then open `http://localhost:8123/`. Stop it with Ctrl+C.
 | `icons/` | Home-screen icons (192, 512, apple-touch) |
 | `vendor/` | React + ReactDOM, vendored so there's no CDN dependency |
 | `serve.ps1` | Local static server for development |
+| `build.ps1` | Compiles `app.jsx`, bumps the cache version, syncs `docs/` |
 | `deploy.ps1` | Pushes to GitHub and enables Pages |
 | `docs/` | **Generated.** Clean deployable copy — this is what GitHub Pages serves |
 
@@ -40,19 +41,33 @@ then open `http://localhost:8123/`. Stop it with Ctrl+C.
 
 Edit `app.jsx`, never `app.js` — `app.js` is generated and will be overwritten.
 
-There's no build tool installed on this machine (no Node/npm), so `app.js` was
-produced by running Babel in the browser and posting the result back to disk.
-To rebuild after editing `app.jsx`, either:
+Then run the build:
 
-1. Ask Claude to recompile it, or
-2. Temporarily swap the `<script src="app.js">` line in `index.html` for the
-   in-browser Babel loader (see git history / ask Claude), which compiles
-   `app.jsx` live — slower, but no build step.
+```powershell
+powershell -ExecutionPolicy Bypass -File build.ps1
+```
 
-After changing any shell file, **bump `CACHE_VERSION` in `sw.js`**. Otherwise
-phones that already installed the app keep serving the old cached copy.
+It prints a URL — open it in a browser and the page compiles itself, then the
+script finishes on its own. Three things happen:
 
-Then copy the changed files into `docs/` and run `deploy.ps1` again.
+1. `app.jsx` is compiled to `app.js`
+2. `CACHE_VERSION` in `sw.js` is bumped
+3. The shell files are copied into `docs/`
+
+Step 2 matters: without a new cache version, phones that already installed the
+app keep serving the old copy from the service worker and your change never
+appears. The build does it for you so it can't be forgotten.
+
+Why a browser is involved: there's no Node/npm on this machine, so there's no
+local JSX compiler. `build.ps1` serves a page that loads Babel, compiles
+`app.jsx`, and POSTs the result back to the script to write to disk. It needs
+internet (Babel comes from a CDN) but nothing installed.
+
+Then deploy:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy.ps1
+```
 
 ## Deploying
 

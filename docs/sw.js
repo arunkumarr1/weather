@@ -1,12 +1,12 @@
 /*
  * Service worker: caches the app shell so the app opens instantly and still
- * loads when offline. Weather API calls are never cached — they always go to
+ * loads when offline. Weather API calls are never cached â€” they always go to
  * the network, so you never see stale conditions.
  *
  * Bump CACHE_VERSION whenever the shell files change, otherwise phones will
  * keep serving the old cached copies.
  */
-const CACHE_VERSION = "weather-v1";
+const CACHE_VERSION = "weather-v2";
 
 const SHELL = [
   "./",

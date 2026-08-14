@@ -6,6 +6,13 @@
 # Check with: gh auth status
 #
 # Safe to re-run. Later runs just push the new commit.
+#
+# Optionally pass a commit message:
+#   powershell -File deploy.ps1 -Message "new sky backgrounds"
+
+param(
+    [string]$Message = "Update weather app"
+)
 
 $ErrorActionPreference = "Stop"
 $repo = "arunkumarr1/weather"
@@ -37,11 +44,13 @@ git config user.email "$uid+arunkumarr1@users.noreply.github.com"
 
 Write-Host "Committing..." -ForegroundColor Cyan
 git add -A
-git commit -m "Weather app: iOS-style PWA" 2>&1 | Out-Null
+git commit -m $Message 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) { Write-Host "  (nothing new to commit)" }
 
+# Deliberately not --force: a normal push fails loudly if the remote has commits
+# this clone doesn't, instead of silently discarding them.
 Write-Host "Pushing to $repo..." -ForegroundColor Cyan
-git push -u origin main --force
+git push -u origin main
 
 Write-Host "Checking GitHub Pages..." -ForegroundColor Cyan
 gh api "repos/$repo/pages" 2>$null | Out-Null

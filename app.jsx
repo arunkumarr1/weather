@@ -54,21 +54,110 @@ function windCompassLabel(deg) {
   return dirs[Math.round(deg / 45) % 8];
 }
 
-function backgroundFor(iconType) {
-  const gradients = {
-    "clear-day": "linear-gradient(180deg, #3a9be0 0%, #6cc0f0 55%, #a9dcf5 100%)",
-    "clear-night": "linear-gradient(180deg, #0b1330 0%, #131c47 55%, #1d2a5e 100%)",
-    "partly-day": "linear-gradient(180deg, #5a93c4 0%, #82aecb 55%, #b6cdd8 100%)",
-    "partly-night": "linear-gradient(180deg, #171f3d 0%, #232c50 55%, #2c3560 100%)",
-    cloudy: "linear-gradient(180deg, #5b6472 0%, #7c8794 55%, #9aa3ac 100%)",
-    fog: "linear-gradient(180deg, #7c8792 0%, #9aa3ab 55%, #b7bec4 100%)",
-    drizzle: "linear-gradient(180deg, #4c5b68 0%, #64757f 55%, #85929a 100%)",
-    rain: "linear-gradient(180deg, #3b4a58 0%, #4f5f6c 55%, #6c7a86 100%)",
-    snow: "linear-gradient(180deg, #6b7787 0%, #8d97a3 55%, #c3cad2 100%)",
-    thunder: "linear-gradient(180deg, #232a33 0%, #333d47 55%, #4a5560 100%)",
-  };
-  return gradients[iconType] || gradients.cloudy;
+/* ============================== Sky scenes ============================== */
+
+/*
+ * iOS changes the sky with the condition AND the time of day, so the scene is
+ * keyed on both. Phase comes from the day's own sunrise/sunset rather than a
+ * fixed clock hour, so it stays right at any latitude or season.
+ */
+function getPhase(nowIso, sunriseIso, sunsetIso, isDayFlag) {
+  if (!nowIso || !sunriseIso || !sunsetIso) return isDayFlag ? "day" : "night";
+  const now = new Date(nowIso).getTime();
+  const rise = new Date(sunriseIso).getTime();
+  const set = new Date(sunsetIso).getTime();
+  if (isNaN(now) || isNaN(rise) || isNaN(set)) return isDayFlag ? "day" : "night";
+  const HOUR = 3600000;
+  if (now >= rise - HOUR && now < rise + HOUR) return "dawn";
+  if (now >= set - 1.5 * HOUR && now < set + HOUR) return "dusk";
+  return now >= rise && now < set ? "day" : "night";
 }
+
+/*
+ * Condition families, coarser than the raw WMO codes because several codes want
+ * the same sky. Note: Open-Meteo's WMO set carries no dust/sand code, so "haze"
+ * is INFERRED from low visibility with no precipitation. The background uses it;
+ * the condition label shown to the user stays whatever the API actually reported.
+ */
+function getFamily(code, visibilityM) {
+  if ([95, 96, 99].includes(code)) return "thunder";
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return "snow";
+  if ([56, 57, 66, 67].includes(code)) return "sleet";
+  if ([65, 82].includes(code)) return "heavyrain";
+  if ([61, 63, 80, 81].includes(code)) return "rain";
+  if ([51, 53, 55].includes(code)) return "drizzle";
+  if (code === 45 || code === 48) return "fog";
+  if (typeof visibilityM === "number" && visibilityM > 0 && visibilityM < 5000 && code <= 3) {
+    return "haze";
+  }
+  if (code === 3) return "cloudy";
+  if (code === 1 || code === 2) return "partly";
+  return "clear";
+}
+
+// Three stops per sky: zenith, mid, horizon.
+const SKY = {
+  clear: {
+    day: ["#1B6BC0", "#4A99DC", "#96C8EA"],
+    night: ["#060B1E", "#0E1636", "#1B2550"],
+    dawn: ["#2B3A6B", "#7E5C86", "#E8A07A"],
+    dusk: ["#1F2E5C", "#6B4A7A", "#E0885F"],
+  },
+  partly: {
+    day: ["#3D82C4", "#6BA3D4", "#A8C8DC"],
+    night: ["#0E1533", "#1B2445", "#2A3358"],
+    dawn: ["#33406A", "#7A6088", "#DB9C82"],
+    dusk: ["#26315B", "#664B78", "#D68C69"],
+  },
+  cloudy: { day: ["#6E7681", "#8A929C", "#A6ACB4"], night: ["#171C24", "#242A33", "#333A43"] },
+  fog: { day: ["#8A929A", "#A4AAB0", "#BFC4C8"], night: ["#21262C", "#2F353E", "#414850"] },
+  haze: { day: ["#93866F", "#B0A288", "#CBBFA6"], night: ["#282420", "#38322A", "#494137"] },
+  drizzle: { day: ["#55636E", "#6D7B85", "#8B979F"], night: ["#131820", "#1E252D", "#2B333B"] },
+  rain: { day: ["#3F4C58", "#55636E", "#717E88"], night: ["#0E131A", "#171E25", "#222A32"] },
+  heavyrain: { day: ["#313C46", "#43505A", "#5C6A74"], night: ["#090D12", "#11171D", "#1A2128"] },
+  thunder: { day: ["#2A303A", "#3A424D", "#4E5661"], night: ["#06090E", "#0D1219", "#151C24"] },
+  snow: { day: ["#7A8592", "#98A2AD", "#C4CBD3"], night: ["#1B212A", "#28303A", "#39424D"] },
+  sleet: { day: ["#4E5A66", "#67737D", "#87939B"], night: ["#101620", "#1B222A", "#272F38"] },
+};
+
+function sceneFor(code, phase, visibilityM) {
+  const family = getFamily(code, visibilityM);
+  const table = SKY[family] || SKY.cloudy;
+
+  // Only clear/partly skies get dedicated dawn/dusk palettes. Under thick cloud
+  // or rain the sunrise colour is muted, so those reuse the day sky and get a
+  // warm wash layered over it instead of a whole separate gradient.
+  let stops = table[phase];
+  let warmWash = false;
+  if (!stops) {
+    stops = table.day;
+    warmWash = phase === "dawn" || phase === "dusk";
+  }
+
+  return {
+    family: family,
+    phase: phase,
+    warmWash: warmWash,
+    topColor: stops[0],
+    gradient:
+      "linear-gradient(180deg, " + stops[0] + " 0%, " + stops[1] + " 55%, " + stops[2] + " 100%)",
+  };
+}
+
+// How many of each particle the family gets, and how the sky is dressed.
+const SCENE_EFFECTS = {
+  clear: { drops: 0, flakes: 0, clouds: 0, luminary: true },
+  partly: { drops: 0, flakes: 0, clouds: 3, luminary: true },
+  cloudy: { drops: 0, flakes: 0, clouds: 6, luminary: false },
+  fog: { drops: 0, flakes: 0, clouds: 0, luminary: false, fogBands: true },
+  haze: { drops: 0, flakes: 0, clouds: 2, luminary: true, hazeWash: true },
+  drizzle: { drops: 18, flakes: 0, clouds: 5, luminary: false, dropSpeed: 1.3, dropLen: 10 },
+  rain: { drops: 42, flakes: 0, clouds: 5, luminary: false, dropSpeed: 0.85, dropLen: 16 },
+  heavyrain: { drops: 72, flakes: 0, clouds: 6, luminary: false, dropSpeed: 0.55, dropLen: 22, slant: true },
+  thunder: { drops: 55, flakes: 0, clouds: 6, luminary: false, dropSpeed: 0.6, dropLen: 20, slant: true, lightning: true },
+  snow: { drops: 0, flakes: 28, clouds: 4, luminary: false },
+  sleet: { drops: 22, flakes: 14, clouds: 5, luminary: false, dropSpeed: 1.0, dropLen: 14 },
+};
 
 /* ============================== Icons (inline SVG) ============================== */
 
@@ -159,53 +248,154 @@ function WeatherIcon({ type, size = 44 }) {
 
 /* ============================== Animated background scene ============================== */
 
-function BackgroundScene({ iconType }) {
-  const showStars = iconType === "clear-night" || iconType === "partly-night";
-  const showSun = iconType === "clear-day";
-  const showRain = iconType === "rain" || iconType === "drizzle" || iconType === "thunder";
-  const showSnow = iconType === "snow";
+function BackgroundScene({ scene }) {
+  const family = scene.family;
+  const phase = scene.phase;
+  const fx = SCENE_EFFECTS[family] || SCENE_EFFECTS.cloudy;
+  const isNight = phase === "night";
+  const isTwilight = phase === "dawn" || phase === "dusk";
 
-  const drops = useRef(
-    [...Array(24)].map(() => ({
-      left: Math.random() * 100,
-      delay: Math.random() * 1.2,
-      duration: 0.6 + Math.random() * 0.5,
-    }))
-  ).current;
-  const flakes = useRef(
-    [...Array(18)].map(() => ({
-      left: Math.random() * 100,
-      delay: Math.random() * 4,
-      duration: 4 + Math.random() * 3,
-    }))
-  ).current;
+  /*
+   * Particle positions are randomised once per mount and kept in a ref. Building
+   * a fresh array on each render would hand React new inline styles every time
+   * and restart the CSS animations, which reads as a stutter.
+   */
+  const pool = useRef(null);
+  if (!pool.current) {
+    pool.current = {
+      drops: [...Array(72)].map(() => ({
+        left: Math.random() * 100,
+        delay: Math.random() * 1.6,
+        jitter: 0.7 + Math.random() * 0.6,
+        opacity: 0.35 + Math.random() * 0.4,
+      })),
+      flakes: [...Array(28)].map(() => ({
+        left: Math.random() * 100,
+        delay: Math.random() * 5,
+        duration: 5 + Math.random() * 4,
+        size: 3 + Math.random() * 4,
+        drift: 12 + Math.random() * 30,
+      })),
+      clouds: [...Array(6)].map((_, i) => ({
+        top: 4 + i * 11 + Math.random() * 5,
+        width: 150 + Math.random() * 190,
+        height: 42 + Math.random() * 36,
+        duration: 46 + Math.random() * 55,
+        delay: -Math.random() * 60,
+        opacity: 0.1 + Math.random() * 0.16,
+      })),
+      stars: [...Array(40)].map(() => ({
+        left: Math.random() * 100,
+        top: Math.random() * 62,
+        size: Math.random() < 0.75 ? 1.5 : 2.5,
+        delay: Math.random() * 4,
+      })),
+    };
+  }
+  const p = pool.current;
+
+  const drops = p.drops.slice(0, fx.drops || 0);
+  const flakes = p.flakes.slice(0, fx.flakes || 0);
+  const clouds = p.clouds.slice(0, fx.clouds || 0);
 
   return (
     <div className="bg-layer">
-      {showStars && <div className="stars" />}
-      {showSun && <div className="sun-glow" />}
-      {showRain && (
-        <div className="rain-layer">
-          {drops.map((d, i) => (
+      {/* Stars only where the sky is actually open. */}
+      {isNight && (family === "clear" || family === "partly") && (
+        <div className="star-field">
+          {p.stars.map((s, i) => (
             <div
               key={i}
-              className="drop"
-              style={{ left: `${d.left}%`, animationDelay: `${d.delay}s`, animationDuration: `${d.duration}s` }}
+              className="star"
+              style={{
+                left: s.left + "%",
+                top: s.top + "%",
+                width: s.size + "px",
+                height: s.size + "px",
+                animationDelay: s.delay + "s",
+              }}
             />
           ))}
         </div>
       )}
-      {showSnow && (
+
+      {/* Sun, moon, or a twilight glow low on the horizon. */}
+      {fx.luminary && (
+        <div
+          className={
+            "luminary " +
+            (isNight ? "luminary-moon" : isTwilight ? "luminary-twilight" : "luminary-sun")
+          }
+        />
+      )}
+
+      {clouds.length > 0 && (
+        <div className="cloud-layer">
+          {clouds.map((c, i) => (
+            <div
+              key={i}
+              className="cloud"
+              style={{
+                top: c.top + "%",
+                width: c.width + "px",
+                height: c.height + "px",
+                opacity: c.opacity,
+                animationDuration: c.duration + "s",
+                animationDelay: c.delay + "s",
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {fx.fogBands && (
+        <div className="fog-layer">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="fog-band" style={{ top: 12 + i * 18 + "%", animationDelay: i * -7 + "s" }} />
+          ))}
+        </div>
+      )}
+
+      {drops.length > 0 && (
+        <div className={"rain-layer" + (fx.slant ? " rain-slant" : "")}>
+          {drops.map((d, i) => (
+            <div
+              key={i}
+              className="drop"
+              style={{
+                left: d.left + "%",
+                height: fx.dropLen + "px",
+                opacity: d.opacity,
+                animationDelay: d.delay + "s",
+                animationDuration: fx.dropSpeed * d.jitter + "s",
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {flakes.length > 0 && (
         <div className="snow-layer">
           {flakes.map((f, i) => (
             <div
               key={i}
               className="flake"
-              style={{ left: `${f.left}%`, animationDelay: `${f.delay}s`, animationDuration: `${f.duration}s` }}
+              style={{
+                left: f.left + "%",
+                width: f.size + "px",
+                height: f.size + "px",
+                animationDelay: f.delay + "s",
+                animationDuration: f.duration + "s",
+                "--drift": f.drift + "px",
+              }}
             />
           ))}
         </div>
       )}
+
+      {fx.hazeWash && <div className="haze-wash" />}
+      {scene.warmWash && <div className="warm-wash" />}
+      {fx.lightning && <div className="lightning" />}
     </div>
   );
 }
@@ -498,15 +688,38 @@ function App() {
   }
 
   const current = weather && weather.current;
-  const iconType = current ? getIconType(current.weather_code, current.is_day === 1) : "clear-day";
-  const bg = backgroundFor(iconType);
   const conditionText = current ? getConditionText(current.weather_code) : "";
   const daily = weather && weather.daily;
   const hourly = weather && weather.hourly;
 
+  const nowIdx = hourly && current ? currentHourIndex(hourly, current.time) : 0;
+  const visibilityM =
+    hourly && hourly.visibility && typeof hourly.visibility[nowIdx] === "number"
+      ? hourly.visibility[nowIdx]
+      : null;
+  const phase =
+    current && daily
+      ? getPhase(current.time, daily.sunrise[0], daily.sunset[0], current.is_day === 1)
+      : "day";
+  const scene = current
+    ? sceneFor(current.weather_code, phase, visibilityM)
+    : sceneFor(0, "day", null);
+
+  /*
+   * In standalone mode Android paints the status bar with theme-color, so a fixed
+   * value leaves a mismatched strip above the page whenever the sky is anything
+   * other than that one colour. Track the scene's zenith colour instead. body
+   * gets it too, so overscroll past the top doesn't flash a different shade.
+   */
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", scene.topColor);
+    document.body.style.background = scene.topColor;
+  }, [scene.topColor]);
+
   return (
-    <div className="app" style={{ background: bg }}>
-      <BackgroundScene iconType={iconType} />
+    <div className="app" style={{ background: scene.gradient }}>
+      <BackgroundScene scene={scene} />
       <div className="scroll-area">
         <div className="topbar">
           <input

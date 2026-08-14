@@ -14,6 +14,10 @@ html, body {
   overscroll-behavior: none;
 }
 
+/* Starting value only. The app overwrites this with the live scene's zenith
+   colour so the status-bar area never differs from the top of the sky. */
+body { background: #1B6BC0; transition: background 900ms ease; }
+
 #root { height: 100%; }
 
 button, input {
@@ -55,70 +59,163 @@ button, input {
   pointer-events: none;
 }
 
-.stars {
+/* Stars — individually placed so they can twinkle out of step. */
+.star-field { position: absolute; inset: 0; }
+.star {
   position: absolute;
-  inset: 0;
-  background-image:
-    radial-gradient(1.5px 1.5px at 20% 30%, rgba(255,255,255,.9), transparent),
-    radial-gradient(1.5px 1.5px at 70% 20%, rgba(255,255,255,.7), transparent),
-    radial-gradient(1px 1px at 40% 65%, rgba(255,255,255,.8), transparent),
-    radial-gradient(1px 1px at 85% 55%, rgba(255,255,255,.6), transparent),
-    radial-gradient(1.5px 1.5px at 55% 80%, rgba(255,255,255,.7), transparent),
-    radial-gradient(1px 1px at 10% 75%, rgba(255,255,255,.5), transparent),
-    radial-gradient(1.5px 1.5px at 90% 85%, rgba(255,255,255,.6), transparent),
-    radial-gradient(1px 1px at 30% 10%, rgba(255,255,255,.6), transparent);
-  animation: twinkle 4s ease-in-out infinite alternate;
+  background: #fff;
+  border-radius: 50%;
+  animation: twinkle 3.5s ease-in-out infinite alternate;
 }
 @keyframes twinkle {
-  from { opacity: .6; }
-  to { opacity: 1; }
+  from { opacity: .25; }
+  to { opacity: .95; }
 }
 
-.sun-glow {
+/* Sun / moon / twilight glow. One element, three looks. */
+.luminary {
   position: absolute;
-  top: -60px;
-  right: -60px;
-  width: 260px;
-  height: 260px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,235,150,.85) 0%, rgba(255,210,90,.35) 45%, transparent 70%);
-  filter: blur(2px);
+  pointer-events: none;
+}
+.luminary-sun {
+  top: -70px;
+  right: -50px;
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle,
+    rgba(255,241,178,.9) 0%,
+    rgba(255,214,110,.42) 40%,
+    rgba(255,200,90,.12) 62%,
+    transparent 75%);
+}
+.luminary-moon {
+  top: 34px;
+  right: 34px;
+  width: 128px;
+  height: 128px;
+  background: radial-gradient(circle,
+    rgba(232,238,252,.62) 0%,
+    rgba(200,214,244,.20) 34%,
+    transparent 68%);
+}
+/* Twilight sits low and wide, like light coming off the horizon. */
+.luminary-twilight {
+  bottom: -170px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 190%;
+  height: 380px;
+  border-radius: 50% 50% 0 0;
+  background: radial-gradient(ellipse at 50% 100%,
+    rgba(255,190,130,.55) 0%,
+    rgba(255,150,110,.28) 38%,
+    rgba(190,110,140,.12) 62%,
+    transparent 80%);
 }
 
-.cloud-shape {
+/* Drifting clouds. Each is a soft blurred lozenge crossing the sky. */
+.cloud-layer { position: absolute; inset: 0; }
+.cloud {
   position: absolute;
-  background: rgba(255,255,255,.18);
-  border-radius: 50px;
-  filter: blur(1px);
+  left: -40%;
+  background: radial-gradient(ellipse at 50% 55%,
+    rgba(255,255,255,.95) 0%,
+    rgba(255,255,255,.7) 45%,
+    rgba(255,255,255,0) 72%);
+  border-radius: 50%;
+  filter: blur(6px);
+  animation: drift linear infinite;
+}
+@keyframes drift {
+  from { transform: translateX(0); }
+  to   { transform: translateX(240%); }
 }
 
-.rain-layer, .snow-layer {
+/* Fog — wide horizontal bands sliding slowly in alternate directions. */
+.fog-layer { position: absolute; inset: 0; }
+.fog-band {
   position: absolute;
-  inset: 0;
+  left: -60%;
+  width: 220%;
+  height: 90px;
+  background: linear-gradient(to right,
+    transparent, rgba(255,255,255,.30), rgba(255,255,255,.14), transparent);
+  filter: blur(12px);
+  animation: fogDrift 34s ease-in-out infinite alternate;
 }
+@keyframes fogDrift {
+  from { transform: translateX(0); }
+  to   { transform: translateX(22%); }
+}
+
+.rain-layer, .snow-layer { position: absolute; inset: 0; }
+
 .drop {
   position: absolute;
-  top: -20px;
-  width: 2px;
-  height: 16px;
-  background: rgba(255,255,255,.5);
+  top: -24px;
+  width: 1.6px;
+  background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,.85));
   border-radius: 2px;
   animation: fall linear infinite;
 }
 @keyframes fall {
-  to { transform: translateY(120vh); }
+  to { transform: translateY(115vh); }
 }
+/* Heavy rain and storms blow in at an angle rather than straight down. */
+.rain-slant { transform: rotate(11deg) scale(1.25); transform-origin: top center; }
+
 .flake {
   position: absolute;
-  top: -10px;
-  width: 5px;
-  height: 5px;
-  background: rgba(255,255,255,.85);
+  top: -12px;
+  background: rgba(255,255,255,.9);
   border-radius: 50%;
   animation: fallSlow linear infinite;
 }
 @keyframes fallSlow {
-  to { transform: translateY(120vh) translateX(20px); }
+  to { transform: translateY(115vh) translateX(var(--drift, 20px)); }
+}
+
+/* Haze / dust: a warm veil that lifts toward the horizon. */
+.haze-wash {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg,
+    rgba(190,168,128,.20) 0%,
+    rgba(206,186,148,.34) 55%,
+    rgba(218,202,170,.46) 100%);
+}
+
+/* Dawn/dusk warmth for skies that don't get their own twilight gradient. */
+.warm-wash {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg,
+    rgba(255,140,90,.05) 0%,
+    rgba(255,150,100,.16) 62%,
+    rgba(255,170,110,.30) 100%);
+}
+
+/* Lightning: two quick flashes, then a long wait. */
+.lightning {
+  position: absolute;
+  inset: 0;
+  background: rgba(226,238,255,.9);
+  opacity: 0;
+  animation: flash 9s linear infinite;
+}
+@keyframes flash {
+  0%, 100%      { opacity: 0; }
+  2.0%          { opacity: .50; }
+  3.0%          { opacity: 0; }
+  4.0%          { opacity: .32; }
+  5.2%          { opacity: 0; }
+}
+
+/* Respect users who ask the OS to cut animation. */
+@media (prefers-reduced-motion: reduce) {
+  .star, .cloud, .fog-band, .drop, .flake, .lightning { animation: none; }
+  .lightning { opacity: 0; }
 }
 
 /* ---------- Top bar / search ---------- */
@@ -133,7 +230,9 @@ button, input {
   /* Extra top padding keeps the bar clear of the Android/iOS status bar
      when the app is launched from the home screen in standalone mode. */
   padding: calc(14px + env(safe-area-inset-top, 0px)) 0 6px;
-  background: linear-gradient(to bottom, rgba(0,0,0,.15), transparent);
+  /* Deliberately transparent: a dark scrim here drew a visible band under the
+     status bar. The search field has its own fill, so it stays legible. */
+  background: transparent;
 }
 
 .search-input {
