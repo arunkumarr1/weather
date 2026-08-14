@@ -701,187 +701,472 @@ function DetailTiles({ current, daily, hourly, unit, air }) {
   );
 }
 
-/* ============================== App ============================== */
+/* ============================== Cities ============================== */
 
 const DEFAULT_LOCATION = { lat: 1.3521, lon: 103.8198, name: "Singapore" };
+const CITIES_KEY = "weather.cities.v1";
+const UNIT_KEY = "weather.unit.v1";
 
-function App() {
-  const [coords, setCoords] = useState(null);
-  const [locationName, setLocationName] = useState("");
-  const [unit, setUnit] = useState("C");
-  const [weather, setWeather] = useState(null);
-  const [air, setAir] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+// Rounded so the same place picked twice from search collapses to one entry.
+function cityKey(c) {
+  return c.lat.toFixed(3) + "," + c.lon.toFixed(3);
+}
+
+function loadSavedCities() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(CITIES_KEY) || "[]");
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(
+      (c) => c && typeof c.lat === "number" && typeof c.lon === "number" && c.name
+    );
+  } catch {
+    return [];
+  }
+}
+
+// The geolocated city is derived fresh each launch, so only searched cities persist.
+function saveCities(list) {
+  try {
+    localStorage.setItem(
+      CITIES_KEY,
+      JSON.stringify(list.filter((c) => !c.isCurrent).map((c) => ({ name: c.name, lat: c.lat, lon: c.lon })))
+    );
+  } catch {
+    /* private mode / storage full: the list just won't persist */
+  }
+}
+
+/* ============================== City list view ============================== */
+
+function CityCard({ city, entry, unit, onSelect, onRemove, removable }) {
+  const cur = entry && entry.weather && entry.weather.current;
+  const daily = entry && entry.weather && entry.weather.daily;
+  const scene = cur
+    ? sceneFor(
+        cur.weather_code,
+        getPhase(cur.time, daily && daily.sunrise[0], daily && daily.sunset[0], cur.is_day === 1),
+        null,
+        entry.air
+      )
+    : null;
+
+  // Each card shows the city's own local time, which is what makes a list of
+  // places in different zones readable at a glance.
+  let localTime = null;
+  if (cur && cur.time) {
+    const t = cur.time.split("T")[1];
+    if (t) {
+      const [h, m] = t.split(":");
+      const hh = parseInt(h, 10);
+      const ampm = hh >= 12 ? "PM" : "AM";
+      const h12 = hh % 12 === 0 ? 12 : hh % 12;
+      localTime = h12 + ":" + m + " " + ampm;
+    }
+  }
+
+  return (
+    <div
+      className="city-card"
+      style={scene ? { background: scene.gradient } : undefined}
+      onClick={() => onSelect(city)}
+    >
+      {scene && <div className="city-card-scene"><BackgroundScene scene={scene} /></div>}
+      <div className="city-card-body">
+        <div className="city-card-left">
+          <div className="city-card-name">{city.name}</div>
+          <div className="city-card-sub">{city.isCurrent ? "My Location" : localTime || " "}</div>
+          <div className="city-card-cond">{cur ? getConditionText(cur.weather_code) : "Loading…"}</div>
+        </div>
+        <div className="city-card-right">
+          <div className="city-card-temp">{cur ? Math.round(cur.temperature_2m) + "°" : "–"}</div>
+          <div className="city-card-hilo">
+            {daily ? "H:" + Math.round(daily.temperature_2m_max[0]) + "° L:" + Math.round(daily.temperature_2m_min[0]) + "°" : ""}
+          </div>
+        </div>
+      </div>
+      {removable && (
+        <button
+          className="city-card-remove"
+          aria-label={"Remove " + city.name}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove(city);
+          }}
+        >
+          &times;
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CityListView({ cities, data, unit, onSelect, onRemove, onAdd, onUnitToggle }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
-  const [showResults, setShowResults] = useState(false);
-  const searchTimer = useRef(null);
+  const timer = useRef(null);
 
-  // Initial location: try geolocation, fall back to default.
-  useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
-        },
-        () => {
-          setCoords({ lat: DEFAULT_LOCATION.lat, lon: DEFAULT_LOCATION.lon });
-          setLocationName(DEFAULT_LOCATION.name);
-        },
-        { timeout: 6000 }
-      );
-    } else {
-      setCoords({ lat: DEFAULT_LOCATION.lat, lon: DEFAULT_LOCATION.lon });
-      setLocationName(DEFAULT_LOCATION.name);
-    }
-  }, []);
-
-  // Resolve a human-readable name whenever coords change without one already set.
-  useEffect(() => {
-    if (!coords) return;
-    if (!locationName) {
-      reverseGeocode(coords.lat, coords.lon).then(setLocationName);
-    }
-  }, [coords]);
-
-  const loadWeather = useCallback(
-    (lat, lon, u) => {
-      setLoading(true);
-      setError(null);
-      fetchWeather(lat, lon, u)
-        .then(setWeather)
-        .catch(() => setError("Couldn't load weather. Check your connection and try again."))
-        .finally(() => setLoading(false));
-    },
-    []
-  );
-
-  useEffect(() => {
-    if (coords) loadWeather(coords.lat, coords.lon, unit);
-  }, [coords, unit, loadWeather]);
-
-  /*
-   * Air quality is fetched separately and not tied to `unit`, since changing
-   * C/F has no bearing on it. Cleared first so a stale reading from the previous
-   * city can't colour the sky for the new one.
-   */
-  useEffect(() => {
-    if (!coords) return;
-    let cancelled = false;
-    setAir(null);
-    fetchAirQuality(coords.lat, coords.lon).then((a) => {
-      if (!cancelled) setAir(a);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [coords]);
-
-  function handleSearchChange(e) {
-    const val = e.target.value;
-    setQuery(val);
-    setShowResults(true);
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    if (val.trim().length < 2) {
+  function onChange(e) {
+    const v = e.target.value;
+    setQuery(v);
+    if (timer.current) clearTimeout(timer.current);
+    if (v.trim().length < 2) {
       setResults([]);
       return;
     }
-    searchTimer.current = setTimeout(() => {
-      searchPlaces(val).then(setResults);
+    timer.current = setTimeout(() => {
+      searchPlaces(v).then(setResults);
     }, 350);
   }
 
-  function pickResult(r) {
-    setCoords({ lat: r.latitude, lon: r.longitude });
-    setLocationName(r.admin1 && r.admin1 !== r.name ? `${r.name}` : r.name);
+  function pick(r) {
+    onAdd({ name: r.name, lat: r.latitude, lon: r.longitude });
     setQuery("");
     setResults([]);
-    setShowResults(false);
   }
 
+  return (
+    <div className="list-view">
+      <div className="list-header">
+        <h1 className="list-title">Weather</h1>
+        <button className="unit-toggle" onClick={onUnitToggle}>°{unit}</button>
+      </div>
+
+      <div className="city-cards">
+        {cities.map((c) => (
+          <CityCard
+            key={cityKey(c)}
+            city={c}
+            entry={data[cityKey(c)]}
+            unit={unit}
+            onSelect={onSelect}
+            onRemove={onRemove}
+            removable={!c.isCurrent}
+          />
+        ))}
+        {cities.length === 0 && (
+          <div className="list-empty">Search below to add a city.</div>
+        )}
+      </div>
+
+      <div className="list-search-wrap">
+        {results.length > 0 && (
+          <div className="list-results">
+            {results.map((r) => (
+              <div className="search-result-item" key={r.id} onClick={() => pick(r)}>
+                <div>{r.name}</div>
+                <div className="search-result-sub">
+                  {[r.admin1, r.country].filter(Boolean).join(", ")}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <input
+          className="list-search"
+          placeholder="Search for a city"
+          value={query}
+          onChange={onChange}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ============================== One city's page ============================== */
+
+function CityPage({ city, entry, unit, scene }) {
+  const weather = entry && entry.weather;
+  const air = entry && entry.air;
   const current = weather && weather.current;
-  const conditionText = current ? getConditionText(current.weather_code) : "";
   const daily = weather && weather.daily;
   const hourly = weather && weather.hourly;
 
-  const nowIdx = hourly && current ? currentHourIndex(hourly, current.time) : 0;
-  const visibilityM =
-    hourly && hourly.visibility && typeof hourly.visibility[nowIdx] === "number"
-      ? hourly.visibility[nowIdx]
-      : null;
-  const phase =
-    current && daily
-      ? getPhase(current.time, daily.sunrise[0], daily.sunset[0], current.is_day === 1)
-      : "day";
-  const scene = current
-    ? sceneFor(current.weather_code, phase, visibilityM, air)
-    : sceneFor(0, "day", null, null);
-
-  /*
-   * In standalone mode Android paints the status bar with theme-color, so a fixed
-   * value leaves a mismatched strip above the page whenever the sky is anything
-   * other than that one colour. Track the scene's zenith colour instead. body
-   * gets it too, so overscroll past the top doesn't flash a different shade.
-   */
-  useEffect(() => {
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", scene.topColor);
-    document.body.style.background = scene.topColor;
-  }, [scene.topColor]);
-
   return (
-    <div className="app" style={{ background: scene.gradient }}>
+    <div className="city-page" style={{ background: scene.gradient }}>
       <BackgroundScene scene={scene} />
       <div className="scroll-area">
-        <div className="topbar">
-          <input
-            className="search-input"
-            placeholder="Search for a city"
-            value={query}
-            onChange={handleSearchChange}
-            onFocus={() => setShowResults(true)}
-          />
-          <button className="unit-toggle" onClick={() => setUnit((u) => (u === "C" ? "F" : "C"))}>
-            °{unit}
-          </button>
-          {showResults && results.length > 0 && (
-            <div className="search-results">
-              {results.map((r) => (
-                <div className="search-result-item" key={r.id} onClick={() => pickResult(r)}>
-                  <div>{r.name}</div>
-                  <div className="search-result-sub">
-                    {[r.admin1, r.country].filter(Boolean).join(", ")}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {loading && !weather && <div className="status-line">Loading weather…</div>}
-        {error && <div className="status-line">{error}</div>}
+        {!weather && !(entry && entry.error) && (
+          <div className="status-line">Loading weather…</div>
+        )}
+        {entry && entry.error && <div className="status-line">{entry.error}</div>}
 
         {current && daily && (
           <>
             <div className="current">
-              <h1 className="current-location">{locationName || "—"}</h1>
+              <h1 className="current-location">{city.name}</h1>
               <p className="current-temp">{Math.round(current.temperature_2m)}°</p>
-              <p className="current-condition">{conditionText}</p>
+              <p className="current-condition">{getConditionText(current.weather_code)}</p>
               <p className="current-hilo">
                 H:{Math.round(daily.temperature_2m_max[0])}° L:{Math.round(daily.temperature_2m_min[0])}°
               </p>
             </div>
 
-            <HourlyPanel hourly={hourly} currentTime={weather.current.time} unit={unit} />
+            <HourlyPanel hourly={hourly} currentTime={current.time} unit={unit} />
             <DailyPanel daily={daily} />
             <DetailTiles current={current} daily={daily} hourly={hourly} unit={unit} air={air} />
 
             <div className="footer-note">
-              Weather data by Open-Meteo · Location by BigDataCloud
+              Weather by Open-Meteo · Air quality by Open-Meteo · Location by BigDataCloud
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================== App ============================== */
+
+function sceneForEntry(entry) {
+  const cur = entry && entry.weather && entry.weather.current;
+  if (!cur) return sceneFor(0, "day", null, null);
+  const daily = entry.weather.daily;
+  const hourly = entry.weather.hourly;
+  const idx = hourly ? currentHourIndex(hourly, cur.time) : 0;
+  const vis =
+    hourly && hourly.visibility && typeof hourly.visibility[idx] === "number"
+      ? hourly.visibility[idx]
+      : null;
+  const phase = getPhase(cur.time, daily && daily.sunrise[0], daily && daily.sunset[0], cur.is_day === 1);
+  return sceneFor(cur.weather_code, phase, vis, entry.air);
+}
+
+function App() {
+  const [unit, setUnit] = useState(() => {
+    try {
+      return localStorage.getItem(UNIT_KEY) === "F" ? "F" : "C";
+    } catch {
+      return "C";
+    }
+  });
+  const [saved, setSaved] = useState(() => loadSavedCities());
+  const [currentCity, setCurrentCity] = useState(null);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [view, setView] = useState("detail");
+  const [data, setData] = useState({});
+  const pagerRef = useRef(null);
+  const skipScrollSync = useRef(false);
+
+  /*
+   * With no location permission there'd be nothing to show, so the default city
+   * is seeded as a normal saved entry. It has to be persisted rather than
+   * synthesised on the fly: a city that only exists while the list is empty
+   * vanishes the moment you add another one.
+   */
+  const seedDefaultIfEmpty = useCallback(() => {
+    setSaved((prev) => {
+      if (prev.length > 0) return prev;
+      const next = [DEFAULT_LOCATION];
+      saveCities(next);
+      return next;
+    });
+  }, []);
+
+  /* -------- locate the user once -------- */
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      seedDefaultIfEmpty();
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const c = { lat: pos.coords.latitude, lon: pos.coords.longitude, name: "Current Location", isCurrent: true };
+        setCurrentCity(c);
+        reverseGeocode(c.lat, c.lon).then((n) =>
+          setCurrentCity((prev) => (prev ? { ...prev, name: n } : prev))
+        );
+      },
+      seedDefaultIfEmpty,
+      { timeout: 6000 }
+    );
+  }, [seedDefaultIfEmpty]);
+
+  /*
+   * The visible list. Current location leads, as it does on iOS. If geolocation
+   * was denied and nothing has been saved yet, fall back to one default city so
+   * the app is never empty on first run.
+   */
+  const cities = React.useMemo(() => {
+    const list = currentCity ? [currentCity] : [];
+    const seen = new Set(list.map(cityKey));
+    saved.forEach((c) => {
+      if (!seen.has(cityKey(c))) {
+        seen.add(cityKey(c));
+        list.push(c);
+      }
+    });
+    return list;
+  }, [currentCity, saved]);
+
+  useEffect(() => {
+    if (activeIdx > cities.length - 1) setActiveIdx(Math.max(0, cities.length - 1));
+  }, [cities.length, activeIdx]);
+
+  /* -------- fetch each city, and refetch all when the unit changes -------- */
+  useEffect(() => {
+    let cancelled = false;
+    cities.forEach((c) => {
+      const k = cityKey(c);
+      fetchWeather(c.lat, c.lon, unit)
+        .then((w) => {
+          if (!cancelled) setData((d) => ({ ...d, [k]: { ...(d[k] || {}), weather: w, error: null } }));
+        })
+        .catch(() => {
+          if (!cancelled)
+            setData((d) => ({ ...d, [k]: { ...(d[k] || {}), error: "Couldn't load weather." } }));
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [cities.map(cityKey).join("|"), unit]);
+
+  // Air quality doesn't depend on the unit, so it's fetched once per city.
+  useEffect(() => {
+    let cancelled = false;
+    cities.forEach((c) => {
+      const k = cityKey(c);
+      if (data[k] && data[k].air !== undefined) return;
+      fetchAirQuality(c.lat, c.lon).then((a) => {
+        if (!cancelled) setData((d) => ({ ...d, [k]: { ...(d[k] || {}), air: a } }));
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [cities.map(cityKey).join("|")]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(UNIT_KEY, unit);
+    } catch {}
+  }, [unit]);
+
+  /* -------- the active city drives the status bar and page background -------- */
+  const activeCity = cities[activeIdx];
+  const activeScene = sceneForEntry(activeCity ? data[cityKey(activeCity)] : null);
+
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", activeScene.topColor);
+    // The gradient (not just the top colour) so any strip of body visible above
+    // or below the app matches the sky at that edge instead of showing a slab.
+    document.body.style.background = activeScene.gradient;
+  }, [activeScene.gradient, activeScene.topColor]);
+
+  /*
+   * Swiping is native horizontal scroll with CSS snap points rather than a JS
+   * gesture handler: it gets momentum, rubber-banding and accessibility for free.
+   * This just reads back which page settled under the viewport.
+   */
+  function onPagerScroll(e) {
+    if (skipScrollSync.current) return;
+    const el = e.currentTarget;
+    const idx = Math.round(el.scrollLeft / el.clientWidth);
+    if (idx !== activeIdx && idx >= 0 && idx < cities.length) setActiveIdx(idx);
+  }
+
+  function goToCity(city) {
+    const idx = cities.findIndex((c) => cityKey(c) === cityKey(city));
+    setActiveIdx(idx === -1 ? 0 : idx);
+    setView("detail");
+  }
+
+  /*
+   * Line the pager up with the selected city once the detail view has actually
+   * mounted. This can't be done inside goToCity: the pager doesn't exist while
+   * the list is showing, so the ref is still null at that point.
+   *
+   * Keyed on `view` alone, deliberately -- including activeIdx would make this
+   * fight the user mid-swipe.
+   */
+  useEffect(() => {
+    if (view !== "detail") return;
+    const el = pagerRef.current;
+    if (!el || !el.clientWidth) return;
+    skipScrollSync.current = true;
+    el.scrollLeft = activeIdx * el.clientWidth;
+    const t = setTimeout(() => {
+      skipScrollSync.current = false;
+    }, 80);
+    return () => clearTimeout(t);
+  }, [view]);
+
+  function addCity(c) {
+    setSaved((prev) => {
+      const k = cityKey(c);
+      if (prev.some((x) => cityKey(x) === k) || (currentCity && cityKey(currentCity) === k)) {
+        return prev;
+      }
+      const next = [...prev, c];
+      saveCities(next);
+      return next;
+    });
+  }
+
+  function removeCity(c) {
+    setSaved((prev) => {
+      const next = prev.filter((x) => cityKey(x) !== cityKey(c));
+      saveCities(next);
+      return next;
+    });
+    setData((d) => {
+      const next = { ...d };
+      delete next[cityKey(c)];
+      return next;
+    });
+  }
+
+  if (view === "list") {
+    return (
+      <div className="app" style={{ background: activeScene.gradient }}>
+        <BackgroundScene scene={activeScene} />
+        <CityListView
+          cities={cities}
+          data={data}
+          unit={unit}
+          onSelect={goToCity}
+          onRemove={removeCity}
+          onAdd={addCity}
+          onUnitToggle={() => setUnit((u) => (u === "C" ? "F" : "C"))}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="app" style={{ background: activeScene.gradient }}>
+      <div className="pager" ref={pagerRef} onScroll={onPagerScroll}>
+        {cities.map((c) => {
+          const entry = data[cityKey(c)];
+          return (
+            <div className="pager-page" key={cityKey(c)}>
+              <CityPage city={c} entry={entry} unit={unit} scene={sceneForEntry(entry)} />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Fixed chrome above the pager: unit toggle, page dots, list button. */}
+      <div className="detail-topbar">
+        <button className="unit-toggle" onClick={() => setUnit((u) => (u === "C" ? "F" : "C"))}>
+          °{unit}
+        </button>
+      </div>
+
+      <div className="detail-bottombar">
+        <div className="page-dots">
+          {cities.map((c, i) => (
+            <span key={cityKey(c)} className={"dot" + (i === activeIdx ? " dot-on" : "")} />
+          ))}
+        </div>
+        <button className="list-btn" aria-label="Show city list" onClick={() => setView("list")}>
+          <svg width="20" height="16" viewBox="0 0 20 16" aria-hidden="true">
+            <rect x="0" y="1" width="20" height="2.4" rx="1.2" fill="currentColor" />
+            <rect x="0" y="6.8" width="20" height="2.4" rx="1.2" fill="currentColor" />
+            <rect x="0" y="12.6" width="20" height="2.4" rx="1.2" fill="currentColor" />
+          </svg>
+        </button>
       </div>
     </div>
   );
