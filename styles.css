@@ -186,6 +186,23 @@ button, input {
     rgba(218,202,170,.46) 100%);
 }
 
+/* Airborne dust: warmer and heavier than pollution haze, and it thickens
+   toward the horizon the way a real dust load does. */
+.dust-wash {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg,
+    rgba(190,140,80,.22) 0%,
+    rgba(200,155,95,.38) 50%,
+    rgba(214,178,124,.52) 100%);
+}
+.dust-wash.dust-heavy {
+  background: linear-gradient(180deg,
+    rgba(170,112,58,.40) 0%,
+    rgba(186,130,74,.56) 45%,
+    rgba(202,156,100,.72) 100%);
+}
+
 /* Dawn/dusk warmth for skies that don't get their own twilight gradient. */
 .warm-wash {
   position: absolute;
@@ -487,6 +504,26 @@ button, input {
   margin-top: 12px;
   background: linear-gradient(to right, #7fe881, #ffe45c, #ffb04c, #ff6a5c, #c86ce0);
 }
+/* US AQI scale: green -> yellow -> orange -> red -> purple -> maroon. */
+.aqi-bar-track {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  margin-top: 10px;
+  background: linear-gradient(to right,
+    #7fe881 0%, #ffe45c 17%, #ffa04c 33%, #ff6a5c 50%, #b06ce0 67%, #9c4a52 100%);
+}
+.aqi-bar-dot {
+  position: absolute;
+  top: -3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 3px rgba(0,0,0,.5);
+  transform: translateX(-50%);
+}
+
 .uv-bar-dot {
   position: absolute;
   top: -3px;

@@ -4,7 +4,7 @@
  *
  * build.ps1 bumps CACHE_VERSION automatically. Keep this file ASCII-only.
  */
-const CACHE_VERSION = "weather-v3";
+const CACHE_VERSION = "weather-v5";
 
 const SHELL = [
   "./",

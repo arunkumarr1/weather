@@ -77,12 +77,25 @@ function getPhase(nowIso, sunriseIso, sunsetIso, isDayFlag) {
 }
 
 /*
- * Condition families, coarser than the raw WMO codes because several codes want
- * the same sky. Note: Open-Meteo's WMO set carries no dust/sand code, so "haze"
- * is INFERRED from low visibility with no precipitation. The background uses it;
- * the condition label shown to the user stays whatever the API actually reported.
+ * Dust concentration (ug/m3) at which the sky gets the dust treatment. The WHO
+ * publishes no dust-specific band, so unlike the AQI cutoff these two numbers
+ * are a judgement call, tuned to roughly "visibly dusty" and "dust storm".
  */
-function getFamily(code, visibilityM) {
+const DUST_VISIBLE = 50;
+const DUST_HEAVY = 150;
+
+/*
+ * Condition families, coarser than the raw WMO codes because several codes want
+ * the same sky.
+ *
+ * The WMO code set Open-Meteo returns has no dust or haze code at all, so those
+ * two skies come from the air-quality endpoint plus visibility instead:
+ *   dust  -- modelled surface dust above DUST_VISIBLE
+ *   haze  -- US AQI past Moderate (>100), or visibility under 5 km
+ * Both only apply when the sky is otherwise clear-to-overcast; actual rain, fog
+ * or snow always wins, because those are reported facts rather than inferences.
+ */
+function getFamily(code, visibilityM, air) {
   if ([95, 96, 99].includes(code)) return "thunder";
   if ([71, 73, 75, 77, 85, 86].includes(code)) return "snow";
   if ([56, 57, 66, 67].includes(code)) return "sleet";
@@ -90,8 +103,12 @@ function getFamily(code, visibilityM) {
   if ([61, 63, 80, 81].includes(code)) return "rain";
   if ([51, 53, 55].includes(code)) return "drizzle";
   if (code === 45 || code === 48) return "fog";
-  if (typeof visibilityM === "number" && visibilityM > 0 && visibilityM < 5000 && code <= 3) {
-    return "haze";
+  if (code <= 3) {
+    const dust = air && typeof air.dust === "number" ? air.dust : null;
+    if (dust !== null && dust >= DUST_VISIBLE) return "dust";
+    const aqi = air && typeof air.us_aqi === "number" ? air.us_aqi : null;
+    const lowVis = typeof visibilityM === "number" && visibilityM > 0 && visibilityM < 5000;
+    if (aqi !== null && aqi > 100 || lowVis) return "haze";
   }
   if (code === 3) return "cloudy";
   if (code === 1 || code === 2) return "partly";
@@ -124,6 +141,11 @@ const SKY = {
     day: ["#93866F", "#B0A288", "#CBBFA6"],
     night: ["#282420", "#38322A", "#494137"]
   },
+  // Dust runs warmer and more orange than pollution haze.
+  dust: {
+    day: ["#A67C4E", "#C29A66", "#DCC08C"],
+    night: ["#2E2318", "#402F20", "#53402C"]
+  },
   drizzle: {
     day: ["#55636E", "#6D7B85", "#8B979F"],
     night: ["#131820", "#1E252D", "#2B333B"]
@@ -149,8 +171,8 @@ const SKY = {
     night: ["#101620", "#1B222A", "#272F38"]
   }
 };
-function sceneFor(code, phase, visibilityM) {
-  const family = getFamily(code, visibilityM);
+function sceneFor(code, phase, visibilityM, air) {
+  const family = getFamily(code, visibilityM, air);
   const table = SKY[family] || SKY.cloudy;
 
   // Only clear/partly skies get dedicated dawn/dusk palettes. Under thick cloud
@@ -162,10 +184,14 @@ function sceneFor(code, phase, visibilityM) {
     stops = table.day;
     warmWash = phase === "dawn" || phase === "dusk";
   }
+
+  // Thick dust gets a denser veil than merely dusty air.
+  const dustHeavy = family === "dust" && air && typeof air.dust === "number" && air.dust >= DUST_HEAVY;
   return {
     family: family,
     phase: phase,
     warmWash: warmWash,
+    dustHeavy: dustHeavy,
     topColor: stops[0],
     gradient: "linear-gradient(180deg, " + stops[0] + " 0%, " + stops[1] + " 55%, " + stops[2] + " 100%)"
   };
@@ -204,6 +230,13 @@ const SCENE_EFFECTS = {
     clouds: 2,
     luminary: true,
     hazeWash: true
+  },
+  dust: {
+    drops: 0,
+    flakes: 0,
+    clouds: 1,
+    luminary: true,
+    dustWash: true
   },
   drizzle: {
     drops: 18,
@@ -566,6 +599,8 @@ function BackgroundScene({
     }
   }))), fx.hazeWash && /*#__PURE__*/React.createElement("div", {
     className: "haze-wash"
+  }), fx.dustWash && /*#__PURE__*/React.createElement("div", {
+    className: "dust-wash" + (scene.dustHeavy ? " dust-heavy" : "")
   }), scene.warmWash && /*#__PURE__*/React.createElement("div", {
     className: "warm-wash"
   }), fx.lightning && /*#__PURE__*/React.createElement("div", {
@@ -582,6 +617,54 @@ async function fetchWeather(lat, lon, unit) {
   const res = await fetch(url);
   if (!res.ok) throw new Error("Weather request failed");
   return res.json();
+}
+
+/*
+ * Air quality comes from a separate Open-Meteo endpoint (no key, no signup).
+ * `dust` is a modelled surface dust concentration, which is what lets the app
+ * tell a genuine dust haze apart from smoke/pollution haze.
+ *
+ * Returns null on failure -- air quality is a nice-to-have, so a failure here
+ * must never stop the forecast rendering.
+ */
+async function fetchAirQuality(lat, lon) {
+  try {
+    const res = await fetch("https://air-quality-api.open-meteo.com/v1/air-quality" + `?latitude=${lat}&longitude=${lon}` + "&current=pm10,pm2_5,us_aqi,dust&timezone=auto");
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data && data.current ? data.current : null;
+  } catch {
+    return null;
+  }
+}
+
+// US EPA bands. Standard, published breakpoints -- not thresholds I chose.
+function aqiBand(aqi) {
+  if (aqi == null) return null;
+  if (aqi <= 50) return {
+    label: "Good",
+    short: "Good"
+  };
+  if (aqi <= 100) return {
+    label: "Moderate",
+    short: "Moderate"
+  };
+  if (aqi <= 150) return {
+    label: "Unhealthy for sensitive groups",
+    short: "Unhealthy (sensitive)"
+  };
+  if (aqi <= 200) return {
+    label: "Unhealthy",
+    short: "Unhealthy"
+  };
+  if (aqi <= 300) return {
+    label: "Very unhealthy",
+    short: "Very unhealthy"
+  };
+  return {
+    label: "Hazardous",
+    short: "Hazardous"
+  };
 }
 async function reverseGeocode(lat, lon) {
   try {
@@ -702,11 +785,38 @@ function DailyPanel({
     }));
   }));
 }
+function AirQualityTile({
+  air
+}) {
+  // Rendered even while air is null so the grid doesn't reflow when it lands.
+  const aqi = air && typeof air.us_aqi === "number" ? Math.round(air.us_aqi) : null;
+  const band = aqiBand(aqi);
+  const pm10 = air && typeof air.pm10 === "number" ? air.pm10 : null;
+  const pm25 = air && typeof air.pm2_5 === "number" ? air.pm2_5 : null;
+  const dust = air && typeof air.dust === "number" ? air.dust : null;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "tile"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "tile-label"
+  }, "Air Quality"), /*#__PURE__*/React.createElement("div", {
+    className: "tile-value"
+  }, aqi != null ? aqi : "—"), /*#__PURE__*/React.createElement("div", {
+    className: "tile-sub"
+  }, band ? band.short : "Unavailable", pm10 != null && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "PM10 ", Math.round(pm10), " · PM2.5 ", pm25 != null ? Math.round(pm25) : "—", " µg/m³"), dust != null && dust >= DUST_VISIBLE && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("br", null), "Dust ", Math.round(dust), " µg/m³")), aqi != null && /*#__PURE__*/React.createElement("div", {
+    className: "aqi-bar-track"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "aqi-bar-dot",
+    style: {
+      left: Math.min(aqi / 300 * 100, 100) + "%"
+    }
+  })));
+}
 function DetailTiles({
   current,
   daily,
   hourly,
-  unit
+  unit,
+  air
 }) {
   if (!current || !daily) return null;
   const nowIdx = currentHourIndex(hourly, current.time);
@@ -727,7 +837,9 @@ function DetailTiles({
   }
   return /*#__PURE__*/React.createElement("div", {
     className: "tiles-grid"
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(AirQualityTile, {
+    air: air
+  }), /*#__PURE__*/React.createElement("div", {
     className: "tile"
   }, /*#__PURE__*/React.createElement("div", {
     className: "tile-label"
@@ -825,6 +937,7 @@ function App() {
   const [locationName, setLocationName] = useState("");
   const [unit, setUnit] = useState("C");
   const [weather, setWeather] = useState(null);
+  const [air, setAir] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [query, setQuery] = useState("");
@@ -873,6 +986,23 @@ function App() {
   useEffect(() => {
     if (coords) loadWeather(coords.lat, coords.lon, unit);
   }, [coords, unit, loadWeather]);
+
+  /*
+   * Air quality is fetched separately and not tied to `unit`, since changing
+   * C/F has no bearing on it. Cleared first so a stale reading from the previous
+   * city can't colour the sky for the new one.
+   */
+  useEffect(() => {
+    if (!coords) return;
+    let cancelled = false;
+    setAir(null);
+    fetchAirQuality(coords.lat, coords.lon).then(a => {
+      if (!cancelled) setAir(a);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [coords]);
   function handleSearchChange(e) {
     const val = e.target.value;
     setQuery(val);
@@ -903,7 +1033,7 @@ function App() {
   const nowIdx = hourly && current ? currentHourIndex(hourly, current.time) : 0;
   const visibilityM = hourly && hourly.visibility && typeof hourly.visibility[nowIdx] === "number" ? hourly.visibility[nowIdx] : null;
   const phase = current && daily ? getPhase(current.time, daily.sunrise[0], daily.sunset[0], current.is_day === 1) : "day";
-  const scene = current ? sceneFor(current.weather_code, phase, visibilityM) : sceneFor(0, "day", null);
+  const scene = current ? sceneFor(current.weather_code, phase, visibilityM, air) : sceneFor(0, "day", null, null);
 
   /*
    * In standalone mode Android paints the status bar with theme-color, so a fixed
@@ -968,7 +1098,8 @@ function App() {
     current: current,
     daily: daily,
     hourly: hourly,
-    unit: unit
+    unit: unit,
+    air: air
   }), /*#__PURE__*/React.createElement("div", {
     className: "footer-note"
   }, "Weather data by Open-Meteo · Location by BigDataCloud"))));

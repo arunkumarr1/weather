@@ -81,9 +81,28 @@ Requires `gh` signed in as `arunkumarr1` (not the work account). Publishes to
 ## Data sources
 
 - Weather: [Open-Meteo](https://open-meteo.com/) forecast API (free, no key)
+- Air quality: Open-Meteo air-quality API (free, no key) for US AQI, PM10,
+  PM2.5 and modelled surface dust
 - City search: Open-Meteo geocoding API
 - "Current location" name lookup: [BigDataCloud](https://www.bigdatacloud.com/)
   reverse-geocode API (free, no key)
+
+### How the sky is chosen
+
+Reported weather always wins. Rain, fog, snow and storms come straight from the
+WMO code in the forecast, and they override everything below.
+
+The WMO set has no code for haze or dust, so those two skies are derived:
+
+| Sky | Trigger | Basis |
+|-----|---------|-------|
+| dust | modelled dust >= 50 ug/m3 (denser veil at >= 150) | thresholds chosen for this app, not a published standard |
+| haze | US AQI > 100, or visibility < 5 km | AQI bands are US EPA published breakpoints |
+
+Both only apply when the reported condition is clear-to-overcast. The condition
+**label** always stays whatever the API reported, so the app never claims a
+condition the source didn't state; only the background reflects the inference.
+The Air Quality tile shows the AQI reading behind it.
 
 Browser geolocation supplies the initial location if you allow it; otherwise it
 falls back to Singapore. Geolocation only works over `https://` or `localhost`,
