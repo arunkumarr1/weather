@@ -147,7 +147,9 @@ Write-Host "  app.js compiled." -ForegroundColor Green
 # ---------------------------------------------------- bump the cache version
 
 $swPath = Join-Path $root "sw.js"
-$sw = Get-Content $swPath -Raw
+# -Encoding UTF8 is required: PowerShell 5.1's default read is ANSI, so writing
+# the file back out as UTF8 would mangle any non-ASCII character in it.
+$sw = Get-Content $swPath -Raw -Encoding UTF8
 $m = [regex]::Match($sw, 'const CACHE_VERSION = "weather-v(\d+)"')
 if (-not $m.Success) { throw "Could not find CACHE_VERSION in sw.js" }
 $next = [int]$m.Groups[1].Value + 1

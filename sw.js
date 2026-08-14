@@ -1,12 +1,10 @@
 /*
- * Service worker: caches the app shell so the app opens instantly and still
- * loads when offline. Weather API calls are never cached â€” they always go to
- * the network, so you never see stale conditions.
+ * Service worker: keeps the app usable offline without ever showing you a stale
+ * build. Weather API calls are never cached, so conditions are always live.
  *
- * Bump CACHE_VERSION whenever the shell files change, otherwise phones will
- * keep serving the old cached copies.
+ * build.ps1 bumps CACHE_VERSION automatically. Keep this file ASCII-only.
  */
-const CACHE_VERSION = "weather-v2";
+const CACHE_VERSION = "weather-v3";
 
 const SHELL = [
   "./",
@@ -56,19 +54,23 @@ self.addEventListener("fetch", (event) => {
   // Live data (weather, geocoding) must never come from cache.
   if (url.origin !== self.location.origin) return;
 
-  // App shell: serve from cache first, refresh the copy in the background.
+  /*
+   * Network-first for the app shell, falling back to cache when offline.
+   *
+   * Cache-first would be marginally faster to open, but it serves the previous
+   * build on the first launch after an update -- so a change looks like it
+   * didn't deploy until you close and reopen the app. Correctness wins here;
+   * the shell is a few KB and the cache still covers offline use.
+   */
   event.respondWith(
-    caches.match(req).then((cached) => {
-      const network = fetch(req)
-        .then((res) => {
-          if (res && res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE_VERSION).then((c) => c.put(req, copy));
-          }
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(req)
+      .then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE_VERSION).then((c) => c.put(req, copy));
+        }
+        return res;
+      })
+      .catch(() => caches.match(req))
   );
 });
