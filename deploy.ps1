@@ -43,19 +43,25 @@ if ($LASTEXITCODE -ne 0) { Write-Host "  (nothing new to commit)" }
 Write-Host "Pushing to $repo..." -ForegroundColor Cyan
 git push -u origin main --force
 
-Write-Host "Enabling GitHub Pages (main branch, /docs folder)..." -ForegroundColor Cyan
-$body = '{"source":{"branch":"main","path":"/docs"}}'
-try {
-    $body | gh api "repos/$repo/pages" -X POST --input - | Out-Null
-    Write-Host "  Pages enabled."
-} catch {
-    try {
-        $body | gh api "repos/$repo/pages" -X PUT --input - | Out-Null
-        Write-Host "  Pages already on; source updated."
-    } catch {
-        Write-Host "  Could not set Pages automatically." -ForegroundColor Yellow
-        Write-Host "  Set it by hand: repo Settings > Pages > Source: main, folder: /docs"
+Write-Host "Checking GitHub Pages..." -ForegroundColor Cyan
+gh api "repos/$repo/pages" 2>$null | Out-Null
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "  Already enabled."
+} else {
+    Write-Host "  Enabling (main branch, /docs folder)..."
+    # Body goes via a temp file: piping JSON to `--input -` gets mangled by
+    # PowerShell's encoding and the API rejects it with HTTP 400.
+    $tmp = Join-Path $env:TEMP "pages-body.json"
+    '{"source":{"branch":"main","path":"/docs"}}' |
+        Out-File -FilePath $tmp -Encoding ascii -NoNewline
+    gh api "repos/$repo/pages" -X POST --input $tmp | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "  Pages enabled."
+    } else {
+        Write-Host "  Could not enable Pages automatically." -ForegroundColor Yellow
+        Write-Host "  Set it by hand: Settings > Pages > Source: main, folder: /docs"
     }
+    Remove-Item $tmp -ErrorAction SilentlyContinue
 }
 
 Write-Host ""

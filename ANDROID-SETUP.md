@@ -6,12 +6,20 @@ The end result: a **Weather icon in your app drawer**, opening full-screen with
 no browser bars — indistinguishable from a normal app to use. Android builds a
 real app wrapper (a "WebAPK") behind the scenes.
 
+> ## ✅ Stage 1 is already done — the app is live
+>
+> **<https://arunkumarr1.github.io/weather/>**
+>
+> Skip straight to **Stage 2** below and install it on your phone.
+> Stage 1 is kept only as a record of how it was published, and for
+> re-deploying later.
+
 There are two stages: **put it online once** (on the PC), then **install it**
 (on the phone).
 
 ---
 
-## Stage 1 — Put it online (on the PC, ~5 minutes)
+## Stage 1 — Put it online (on the PC, ~5 minutes) — DONE
 
 The app has to live at a real `https://` web address. It can't be copied to the
 phone as a file, because Android blocks location access and app-install for
