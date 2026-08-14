@@ -1,0 +1,428 @@
+:root {
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+#root { height: 100%; }
+
+button, input {
+  font-family: inherit;
+}
+
+/* ---------- App shell ---------- */
+
+.app {
+  position: relative;
+  height: 100dvh;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  overflow: hidden;
+  color: #fff;
+  transition: background 900ms ease;
+}
+
+.scroll-area {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 16px calc(40px + env(safe-area-inset-bottom, 0px));
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.scroll-area::-webkit-scrollbar { display: none; }
+
+/* ---------- Background scenes ---------- */
+
+.bg-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.stars {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1.5px 1.5px at 20% 30%, rgba(255,255,255,.9), transparent),
+    radial-gradient(1.5px 1.5px at 70% 20%, rgba(255,255,255,.7), transparent),
+    radial-gradient(1px 1px at 40% 65%, rgba(255,255,255,.8), transparent),
+    radial-gradient(1px 1px at 85% 55%, rgba(255,255,255,.6), transparent),
+    radial-gradient(1.5px 1.5px at 55% 80%, rgba(255,255,255,.7), transparent),
+    radial-gradient(1px 1px at 10% 75%, rgba(255,255,255,.5), transparent),
+    radial-gradient(1.5px 1.5px at 90% 85%, rgba(255,255,255,.6), transparent),
+    radial-gradient(1px 1px at 30% 10%, rgba(255,255,255,.6), transparent);
+  animation: twinkle 4s ease-in-out infinite alternate;
+}
+@keyframes twinkle {
+  from { opacity: .6; }
+  to { opacity: 1; }
+}
+
+.sun-glow {
+  position: absolute;
+  top: -60px;
+  right: -60px;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,235,150,.85) 0%, rgba(255,210,90,.35) 45%, transparent 70%);
+  filter: blur(2px);
+}
+
+.cloud-shape {
+  position: absolute;
+  background: rgba(255,255,255,.18);
+  border-radius: 50px;
+  filter: blur(1px);
+}
+
+.rain-layer, .snow-layer {
+  position: absolute;
+  inset: 0;
+}
+.drop {
+  position: absolute;
+  top: -20px;
+  width: 2px;
+  height: 16px;
+  background: rgba(255,255,255,.5);
+  border-radius: 2px;
+  animation: fall linear infinite;
+}
+@keyframes fall {
+  to { transform: translateY(120vh); }
+}
+.flake {
+  position: absolute;
+  top: -10px;
+  width: 5px;
+  height: 5px;
+  background: rgba(255,255,255,.85);
+  border-radius: 50%;
+  animation: fallSlow linear infinite;
+}
+@keyframes fallSlow {
+  to { transform: translateY(120vh) translateX(20px); }
+}
+
+/* ---------- Top bar / search ---------- */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Extra top padding keeps the bar clear of the Android/iOS status bar
+     when the app is launched from the home screen in standalone mode. */
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 0 6px;
+  background: linear-gradient(to bottom, rgba(0,0,0,.15), transparent);
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 9px 14px;
+  border-radius: 12px;
+  background: rgba(120,120,128,.28);
+  color: #fff;
+  font-size: 15px;
+}
+.search-input::placeholder { color: rgba(255,255,255,.6); }
+
+.icon-btn {
+  border: none;
+  background: rgba(120,120,128,.28);
+  color: #fff;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.icon-btn:active { background: rgba(120,120,128,.45); }
+
+.search-results {
+  position: absolute;
+  top: 56px;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  background: rgba(40,40,45,.92);
+  backdrop-filter: blur(20px);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0,0,0,.4);
+}
+.search-result-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  cursor: pointer;
+  font-size: 15px;
+}
+.search-result-item:last-child { border-bottom: none; }
+.search-result-item:active { background: rgba(255,255,255,.1); }
+.search-result-sub {
+  font-size: 12px;
+  color: rgba(255,255,255,.55);
+  margin-top: 2px;
+}
+
+/* ---------- Header (current conditions) ---------- */
+
+.current {
+  text-align: center;
+  padding: 18px 0 22px;
+}
+.current-location {
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: .2px;
+  margin: 0 0 4px;
+}
+.current-temp {
+  font-size: 92px;
+  font-weight: 200;
+  line-height: 1;
+  margin: 0;
+  letter-spacing: -2px;
+}
+.current-condition {
+  font-size: 19px;
+  margin: 2px 0 0;
+  font-weight: 500;
+}
+.current-hilo {
+  font-size: 15px;
+  opacity: .85;
+  margin-top: 2px;
+}
+
+.status-line {
+  text-align: center;
+  padding: 40px 0;
+  opacity: .8;
+  font-size: 15px;
+}
+
+/* ---------- Glass panels ---------- */
+
+.panel {
+  background: rgba(120,120,128,.24);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border-radius: 16px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: rgba(255,255,255,.75);
+  padding: 10px 14px 0;
+}
+
+.divider {
+  height: 1px;
+  background: rgba(255,255,255,.15);
+  margin: 10px 14px 0;
+}
+
+/* Hourly */
+
+.hourly-scroll {
+  display: flex;
+  overflow-x: auto;
+  gap: 0;
+  padding: 12px 8px 14px;
+  scrollbar-width: none;
+}
+.hourly-scroll::-webkit-scrollbar { display: none; }
+
+.hour-item {
+  flex: 0 0 auto;
+  width: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.hour-label {
+  font-size: 13px;
+  opacity: .85;
+}
+.hour-precip {
+  font-size: 11px;
+  color: #7ad0ff;
+  height: 13px;
+}
+.hour-temp {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* Daily */
+
+.day-row {
+  display: grid;
+  grid-template-columns: 78px 30px 1fr auto 34px auto 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 15px;
+}
+.day-name {
+  font-weight: 500;
+}
+.day-today { color: #7ad0ff; }
+.day-precip {
+  font-size: 12px;
+  color: #7ad0ff;
+  text-align: right;
+}
+.day-lo {
+  opacity: .6;
+  text-align: right;
+  width: 28px;
+}
+.day-hi {
+  text-align: right;
+  width: 28px;
+}
+.temp-bar-track {
+  position: relative;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255,255,255,.15);
+}
+.temp-bar-fill {
+  position: absolute;
+  top: 0; bottom: 0;
+  border-radius: 2px;
+  background: linear-gradient(to right, #7fd8f5, #ffcf5c, #ff8a5c);
+}
+
+/* Detail tiles grid */
+
+.tiles-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.tile {
+  background: rgba(120,120,128,.24);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border-radius: 16px;
+  padding: 12px 14px 14px;
+  min-height: 108px;
+}
+.tile-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: rgba(255,255,255,.65);
+}
+.tile-value {
+  font-size: 30px;
+  font-weight: 500;
+  margin-top: 8px;
+}
+.tile-sub {
+  font-size: 13px;
+  opacity: .8;
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.wind-compass {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  margin: 4px auto 0;
+}
+.wind-needle {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform .5s ease;
+}
+
+.uv-bar-track {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  margin-top: 12px;
+  background: linear-gradient(to right, #7fe881, #ffe45c, #ffb04c, #ff6a5c, #c86ce0);
+}
+.uv-bar-dot {
+  position: absolute;
+  top: -3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 3px rgba(0,0,0,.5);
+  transform: translateX(-50%);
+}
+
+.sun-arc-wrap {
+  position: relative;
+  height: 40px;
+  margin-top: 6px;
+}
+
+.footer-note {
+  text-align: center;
+  font-size: 12px;
+  opacity: .55;
+  padding: 6px 20px 10px;
+}
+
+.unit-toggle {
+  border: none;
+  background: rgba(120,120,128,.28);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (min-width: 481px) {
+  .app { border-radius: 0; }
+}
