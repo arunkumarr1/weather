@@ -721,10 +721,14 @@ button, input {
 .city-card-temp { font-size: 44px; font-weight: 250; line-height: 1; letter-spacing: -1px; }
 .city-card-hilo { font-size: 13px; opacity: .9; margin-top: auto; padding-top: 18px; }
 
+/* Reserve a gutter so the close button never sits on top of the temperature. */
+.city-card-removable .city-card-body { padding-right: 38px; }
+
 .city-card-remove {
   position: absolute;
-  top: 6px;
-  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  right: 9px;
   z-index: 2;
   border: none;
   background: rgba(0,0,0,.22);
@@ -735,9 +739,11 @@ button, input {
   font-size: 15px;
   line-height: 1;
   cursor: pointer;
-  opacity: .55;
+  opacity: .5;
 }
 .city-card-remove:active { opacity: 1; }
+/* :active is unreliable on the parent for touch, so keep the target generous. */
+.city-card-remove { width: 24px; height: 24px; }
 
 .list-empty {
   text-align: center;

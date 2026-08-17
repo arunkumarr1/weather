@@ -189,86 +189,182 @@ const SCENE_EFFECTS = {
 
 /* ============================== Icons (inline SVG) ============================== */
 
+/*
+ * These render as small as 26px in the hourly strip and the 10-day list, so the
+ * shapes are deliberately chunky: a cloud built from overlapping circles reads
+ * as a cloud at that size, where a single ellipse just reads as a blob.
+ */
+const SUN = "#FFB627";
+const MOON = "#E9F0FA";
+const CLOUD = "#FBFDFF";
+const CLOUD_SHADE = "#C6D2E0";
+const CLOUD_DARK = "#8C99A8";
+const CLOUD_DARK_SHADE = "#6F7C8B";
+const DROP = "#3FA0E8";
+const FLAKE = "#EDF6FF";
+
+// dy lifts the cloud to make room for falling precipitation underneath.
+function Cloud({ dy = 0, fill = CLOUD, shade = CLOUD_SHADE }) {
+  return (
+    <g transform={"translate(0 " + dy + ")"}>
+      {/* Offset underside gives the silhouette an edge on a pale panel. */}
+      <rect x="22" y="63" width="56" height="15" rx="7.5" fill={shade} />
+      <circle cx="36" cy="57" r="15" fill={fill} />
+      <circle cx="55" cy="49" r="20" fill={fill} />
+      <circle cx="71" cy="59" r="13" fill={fill} />
+      <rect x="22" y="60" width="56" height="14" rx="7" fill={fill} />
+    </g>
+  );
+}
+
+function SunDisc({ cx, cy, r, rays }) {
+  return (
+    <g fill={SUN} stroke={SUN}>
+      <circle cx={cx} cy={cy} r={r} strokeWidth="0" />
+      {rays &&
+        [...Array(8)].map((_, i) => {
+          const a = (i * Math.PI) / 4;
+          return (
+            <line
+              key={i}
+              x1={cx + Math.cos(a) * (r + 7)}
+              y1={cy + Math.sin(a) * (r + 7)}
+              x2={cx + Math.cos(a) * (r + 16)}
+              y2={cy + Math.sin(a) * (r + 16)}
+              strokeWidth="6.5"
+              strokeLinecap="round"
+            />
+          );
+        })}
+    </g>
+  );
+}
+
+/*
+ * A fixed crescent outline, scaled and positioned rather than recomputed.
+ *
+ * Two dead ends worth not repeating: describing the bite as a second circle and
+ * relying on fill-rule="evenodd" fills the symmetric difference, so the part of
+ * the bite hanging outside the moon gets painted too and it reads as a ring.
+ * And deriving the two arcs from a radius is fragile -- when a radius is under
+ * half its chord SVG quietly scales it up, both arcs collapse onto the same
+ * semicircle, and the icon vanishes. This outline is known good; it spans
+ * roughly a 60-unit circle centred at (50,49).
+ */
+const CRESCENT_D = "M62 20a32 32 0 1 0 18 58 26 26 0 0 1-18-58z";
+
+function Crescent({ cx, cy, r }) {
+  const k = r / 30;
+  return (
+    <g transform={"translate(" + cx + " " + cy + ") scale(" + k + ") translate(-50 -49)"}>
+      <path d={CRESCENT_D} fill={MOON} />
+    </g>
+  );
+}
+
+function Drops({ long }) {
+  return (
+    <g stroke={DROP} strokeWidth={long ? 5.5 : 5} strokeLinecap="round">
+      {[34, 50, 66].map((x, i) => (
+        <line key={i} x1={x} y1={long ? 76 : 77} x2={x - (long ? 6 : 3)} y2={long ? 93 : 86} />
+      ))}
+    </g>
+  );
+}
+
 function WeatherIcon({ type, size = 44 }) {
   const s = size;
+  const box = { width: s, height: s, viewBox: "0 0 100 100" };
+
   switch (type) {
     case "clear-day":
       return (
-        <svg width={s} height={s} viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r="24" fill="#FFD23F" />
-          {[...Array(8)].map((_, i) => {
-            const a = (i * Math.PI) / 4;
-            const x1 = 50 + Math.cos(a) * 34, y1 = 50 + Math.sin(a) * 34;
-            const x2 = 50 + Math.cos(a) * 44, y2 = 50 + Math.sin(a) * 44;
-            return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#FFD23F" strokeWidth="5" strokeLinecap="round" />;
-          })}
+        <svg {...box}>
+          <SunDisc cx={50} cy={50} r={21} rays />
         </svg>
       );
+
     case "clear-night":
       return (
-        <svg width={s} height={s} viewBox="0 0 100 100">
-          <path d="M62 20a32 32 0 1 0 18 58 26 26 0 0 1-18-58z" fill="#DCE3F0" />
-          <circle cx="78" cy="30" r="2.5" fill="#fff" />
-          <circle cx="85" cy="42" r="1.5" fill="#fff" />
+        <svg {...box}>
+          <Crescent cx={48} cy={50} r={30} />
         </svg>
       );
+
     case "partly-day":
       return (
-        <svg width={s} height={s} viewBox="0 0 100 100">
-          <circle cx="38" cy="38" r="18" fill="#FFD23F" />
-          <ellipse cx="58" cy="62" rx="30" ry="20" fill="#F2F5F8" />
-          <ellipse cx="38" cy="58" rx="20" ry="14" fill="#fff" opacity="0.9" />
+        <svg {...box}>
+          <SunDisc cx={35} cy={32} r={14} rays />
+          <Cloud dy={8} />
         </svg>
       );
+
     case "partly-night":
       return (
-        <svg width={s} height={s} viewBox="0 0 100 100">
-          <path d="M46 22a22 22 0 1 0 12 40 18 18 0 0 1-12-40z" fill="#DCE3F0" />
-          <ellipse cx="58" cy="66" rx="30" ry="18" fill="#AEB9C9" />
+        <svg {...box}>
+          <Crescent cx={36} cy={30} r={18} />
+          <Cloud dy={8} />
         </svg>
       );
+
     case "cloudy":
+      // A second cloud behind separates "overcast" from "partly" at a glance.
       return (
-        <svg width={s} height={s} viewBox="0 0 100 100">
-          <ellipse cx="50" cy="60" rx="34" ry="22" fill="#E7EAED" />
-          <ellipse cx="32" cy="52" rx="18" ry="14" fill="#fff" />
+        <svg {...box}>
+          <g transform="translate(-13 -14) scale(0.74)" opacity="0.85">
+            <Cloud fill={CLOUD_SHADE} shade={CLOUD_DARK} />
+          </g>
+          <Cloud dy={4} />
         </svg>
       );
+
     case "fog":
       return (
-        <svg width={s} height={s} viewBox="0 0 100 100">
-          <ellipse cx="50" cy="42" rx="28" ry="16" fill="#EEF1F3" opacity="0.9" />
-          {[36, 50, 64, 78].map((y, i) => (
-            <rect key={i} x="15" y={y} width="70" height="5" rx="2.5" fill="#EEF1F3" opacity={0.9 - i * 0.15} />
-          ))}
+        <svg {...box}>
+          <Cloud dy={-14} />
+          <g fill={CLOUD} stroke="none">
+            <rect x="20" y="72" width="60" height="6" rx="3" />
+            <rect x="30" y="86" width="44" height="6" rx="3" opacity="0.75" />
+          </g>
         </svg>
       );
+
     case "drizzle":
+      return (
+        <svg {...box}>
+          <Cloud dy={-14} />
+          <Drops />
+        </svg>
+      );
+
     case "rain":
       return (
-        <svg width={s} height={s} viewBox="0 0 100 100">
-          <ellipse cx="50" cy="42" rx="30" ry="18" fill="#DDE3E8" />
-          {[34, 50, 66].map((x, i) => (
-            <line key={i} x1={x} y1="66" x2={x - 6} y2="86" stroke="#6FB3E8" strokeWidth="4" strokeLinecap="round" />
-          ))}
+        <svg {...box}>
+          <Cloud dy={-14} />
+          <Drops long />
         </svg>
       );
+
     case "snow":
       return (
-        <svg width={s} height={s} viewBox="0 0 100 100">
-          <ellipse cx="50" cy="42" rx="30" ry="18" fill="#E7EAED" />
-          {[34, 50, 66].map((x, i) => (
-            <circle key={i} cx={x} cy="80" r="3.2" fill="#fff" />
-          ))}
+        <svg {...box}>
+          <Cloud dy={-14} />
+          <g fill={FLAKE}>
+            {[34, 50, 66].map((x, i) => (
+              <circle key={i} cx={x} cy={i === 1 ? 88 : 82} r="5" />
+            ))}
+          </g>
         </svg>
       );
+
     case "thunder":
       return (
-        <svg width={s} height={s} viewBox="0 0 100 100">
-          <ellipse cx="50" cy="40" rx="30" ry="18" fill="#7C8794" />
-          <polygon points="55,58 40,80 52,80 45,96 68,68 55,68" fill="#FFD23F" />
+        <svg {...box}>
+          <Cloud dy={-16} fill={CLOUD_DARK} shade={CLOUD_DARK_SHADE} />
+          <polygon points="53,56 38,82 50,82 44,99 68,70 54,70" fill={SUN} />
         </svg>
       );
+
     default:
       return null;
   }
@@ -766,7 +862,7 @@ function CityCard({ city, entry, unit, onSelect, onRemove, removable }) {
 
   return (
     <div
-      className="city-card"
+      className={"city-card" + (removable ? " city-card-removable" : "")}
       style={scene ? { background: scene.gradient } : undefined}
       onClick={() => onSelect(city)}
     >
